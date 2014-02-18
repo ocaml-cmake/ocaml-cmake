@@ -8,13 +8,15 @@ find_package (OCaml REQUIRED)
 
 include (UseOCaml)
 
-find_ocaml_package (extLib)
+find_ocaml_package (extlib)
 
 include_directories (${EXTLIB_INCLUDE_DIRS})
 
+link_directories (${EXTLIB_LIBRARY_DIRS})
+
 add_ocaml_library (common
   SOURCES   message_node file_node files io
-  LIBRARIES unix str ${EXTLIB_LIBRARY_DIR}/extLib
+  LIBRARIES unix str extLib
   )
 
 add_ocaml_executable (loc
@@ -29,7 +31,7 @@ add_ocaml_executable (messages
 
 add_ocaml_executable (loc2 NATIVE
   SOURCES   message_node file_node files io file_statistics loc
-  LIBRARIES unix str ${EXTLIB_LIBRARY_DIR}/extLib
+  LIBRARIES unix str extLib
   )
 
 add_ocaml_executable (messages2 BYTECODE
