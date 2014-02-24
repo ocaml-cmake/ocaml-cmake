@@ -87,6 +87,11 @@
 # For details see the accompanying COPYING-CMAKE-SCRIPTS file.
 #
 
+if(NOT OCAML_FOUND)
+  message(WARNING "Please, find OCaml before including UseOCaml")
+  return()
+endif()
+
 get_filename_component (CMAKE_USE_OCAML_DIR  "${CMAKE_CURRENT_LIST_FILE}" PATH)
 set (CMAKE_OCAML_DEP_FILE "${CMAKE_USE_OCAML_DIR}/OCamlDep.cmake")
 
@@ -98,8 +103,24 @@ if (CMAKE_BUILD_TYPE)
   string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UPPER) 
 endif (CMAKE_BUILD_TYPE)
 
-option (CMAKE_OCaml_NATIVE          "Compile OCaml targets with native compiler")
+option (CMAKE_OCaml_NATIVE "Compile OCaml targets with native compiler")
 option (CMAKE_OCaml_USE_OCAML_TRACE "Run the script UseOCaml.cmake in trace mode")
+
+set(MSGC "Command used for bytecode targets")
+set(MSGOC "Command used for optimized targets")
+set(MSGDP "Command used to generate dependencies")
+set(MSGQ "Command used to find OCaml librairies")
+
+if(CMAKE_OCaml_FIND)
+  set(CMAKE_OCaml_CMD_COMPILER ${CMAKE_OCaml_FIND} ocamlc CACHE STRING ${MSGC})
+  set(CMAKE_OCaml_CMD_OPT_COMPILER ${CMAKE_OCaml_FIND} ocamlopt CACHE STRING ${MSGOC})
+  set(CMAKE_OCaml_CMD_DEP ${CMAKE_OCaml_FIND} ocamldep -modules CACHE STRING ${MSGDP})
+  set(CMAKE_OCaml_CMD_QUERY ${CMAKE_OCaml_FIND} query CACHE STRING ${MSGQ})
+else()
+  set(CMAKE_OCaml_CMD_COMPILER ${CMAKE_OCaml_COMPILER} CACHE STRING ${MSGC})
+  set(CMAKE_OCaml_CMD_OPT_COMPILER ${CMAKE_OCaml_OPT_COMPILER} CACHE STRING ${MSGOC})
+  set(CMAKE_OCaml_CMD_DEP ${CMAKE_OCaml_DEP} CACHE STRING ${MSGDP})
+endif()
 
 set (CMAKE_OCaml_FLAGS ""
   CACHE STRING "Flags used by the compiler during all build types"
@@ -156,9 +177,9 @@ function (ocaml_parse_macro_arguments prefix arg_names)
     else (idx LESS 0) # Discover a new option
       list (LENGTH ${prefix}_${current_arg} length)
       if (length EQUAL 0) # The previous option has no argument. It is considered as a boolean flag.
-	set (${prefix}_${current_arg} TRUE PARENT_SCOPE)
+        set (${prefix}_${current_arg} TRUE PARENT_SCOPE)
       else (length EQUAL 0)
-	set (${prefix}_${current_arg} "${${prefix}_${current_arg}}" PARENT_SCOPE)
+        set (${prefix}_${current_arg} "${${prefix}_${current_arg}}" PARENT_SCOPE)
       endif (length EQUAL 0)
       set (current_arg ${arg})
       set (${prefix}_${current_arg} "")
@@ -185,40 +206,48 @@ macro (find_ocaml_package name)
   
   string (TOUPPER ${name} name_upper)
   
+  include (FindPackageHandleStandardArgs)
+  
   if (CMAKE_OCaml_FIND)
+    
     execute_process (
-      COMMAND         ${CMAKE_OCaml_FIND} query ${name}
+      COMMAND         ${CMAKE_OCaml_CMD_QUERY} ${name}
       OUTPUT_VARIABLE ${name_upper}_INCLUDE_DIR
       OUTPUT_STRIP_TRAILING_WHITESPACE
       )
 
     execute_process (
-      COMMAND    ${CMAKE_OCaml_FIND} query -format "%v" ${name}
+      COMMAND    ${CMAKE_OCaml_CMD_QUERY} -format "%v" ${name}
       OUTPUT_VARIABLE ${name_upper}_VERSION
       OUTPUT_STRIP_TRAILING_WHITESPACE
       )
-  endif (CMAKE_OCaml_FIND)
-
-  set (${name_upper}_INCLUDE_DIR ${${name_upper}_INCLUDE_DIR} CACHE PATH "")
-  set (${name_upper}_LIBRARY_DIR ${${name_upper}_INCLUDE_DIR} CACHE PATH "")
-  
-  include (FindPackageHandleStandardArgs)
-  
-  find_package_handle_standard_args (${name} DEFAULT_MSG
-    ${name_upper}_VERSION
-    ${name_upper}_INCLUDE_DIR
-    ${name_upper}_LIBRARY_DIR
-    )
-  
-  mark_as_advanced (
-    ${name_upper}_INCLUDE_DIR
-    ${name_upper}_LIBRARY_DIR
-    )
-  
-  if (${name_upper}_FOUND)
-    set (${name_upper}_INCLUDE_DIRS ${${name_upper}_INCLUDE_DIR})
-    set (${name_upper}_LIBRARY_DIRS ${${name_upper}_LIBRARY_DIR})
-  endif (${name_upper}_FOUND)
+    
+    find_package_handle_standard_args (${name} DEFAULT_MSG
+      ${name_upper}_VERSION
+      )
+    
+  else()
+    
+    set (${name_upper}_INCLUDE_DIR ${${name_upper}_INCLUDE_DIR} CACHE PATH "")
+    set (${name_upper}_LIBRARY_DIR ${${name_upper}_INCLUDE_DIR} CACHE PATH "")
+    
+    find_package_handle_standard_args (${name} DEFAULT_MSG
+      ${name_upper}_VERSION
+      ${name_upper}_INCLUDE_DIR
+      ${name_upper}_LIBRARY_DIR
+      )
+    
+    mark_as_advanced (
+      ${name_upper}_INCLUDE_DIR
+      ${name_upper}_LIBRARY_DIR
+      )
+    
+    if (${name_upper}_FOUND)
+      set (${name_upper}_INCLUDE_DIRS ${${name_upper}_INCLUDE_DIR})
+      set (${name_upper}_LIBRARY_DIRS ${${name_upper}_LIBRARY_DIR})
+    endif (${name_upper}_FOUND)
+    
+  endif()
   
 endmacro (find_ocaml_package name)
 
@@ -229,6 +258,7 @@ endmacro (find_ocaml_package name)
 #   The native argument is used for interface files. Indeed, the CMI file produced
 # for an interface file is the same file but it could depend on CMO files or CMX files.
 function (get_ocaml_dependencies target filename impl hasintf dep)
+  
   if (CMAKE_OCaml_USE_OCAML_TRACE)
     message (STATUS "get_ocaml_dependencies (${target} ${filename} ${impl} ${hasintf})")
   endif (CMAKE_OCaml_USE_OCAML_TRACE)
@@ -239,10 +269,12 @@ function (get_ocaml_dependencies target filename impl hasintf dep)
   set (${dep})
   
   execute_process (
-    COMMAND ${CMAKE_COMMAND} -D ocamldep=${CMAKE_OCaml_DEP}
-                             -D filename=${filename}
-			     -D output=${OCAML_${target}_OUTPUT_DIR}
-			     -P ${CMAKE_OCAML_DEP_FILE}
+    COMMAND ${CMAKE_COMMAND}
+      -D ocamldep=${CMAKE_OCaml_DEP}
+      -D ocamlfind=${CMAKE_OCaml_FIND}
+      -D filename=${filename}
+      -D output=${OCAML_${target}_OUTPUT_DIR}
+      -P ${CMAKE_OCAML_DEP_FILE}
     )
   
   include ("${OCAML_${target}_OUTPUT_DIR}/Dependencies/${name}.dep.cmake")
@@ -259,38 +291,38 @@ function (get_ocaml_dependencies target filename impl hasintf dep)
     foreach (source ${OCAML_${target}_SOURCES})
       get_filename_component (source_name_we ${source} NAME_WE)
       capitalize (${source_name_we} usource_name_we)
-      if (usource_name_we STREQUAL ${depend})
-	set (location "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/ocaml.${target}.dir/${source_name_we}.cmi")
-	break ()
-      endif (usource_name_we STREQUAL ${depend})
+      if(usource_name_we STREQUAL ${depend})
+        set(location "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/ocaml.${target}.dir/${source_name_we}.cmi")
+        break()
+      endif()
     endforeach (source)
     
     # Looking for the real file in the sources of the dependent targets, which are OCaml libraries.
     if (NOT location)
       foreach (targetdepend ${OCAML_${target}_OCAML_TARGET_LIBRARIES})
-	get_target_property (sources ocaml.${targetdepend} OCAML_SOURCES)
-	get_target_property (obj_dir ocaml.${targetdepend} OBJECT_DIRECTORY)
-	foreach (source ${sources})
-	  get_filename_component (source_name_we ${source} NAME_WE)
-	  capitalize (${source_name_we} usource_name_we)
-	  if (usource_name_we STREQUAL ${depend})
-	    set (location "${obj_dir}/${source_name_we}.cmi")
-	    break ()
-	  endif (usource_name_we STREQUAL ${depend})
-	endforeach (source)
+        get_target_property (sources ocaml.${targetdepend} OCAML_SOURCES)
+        get_target_property (obj_dir ocaml.${targetdepend} OBJECT_DIRECTORY)
+        foreach (source ${sources})
+          get_filename_component (source_name_we ${source} NAME_WE)
+          capitalize (${source_name_we} usource_name_we)
+          if (usource_name_we STREQUAL ${depend})
+            set (location "${obj_dir}/${source_name_we}.cmi")
+            break ()
+          endif (usource_name_we STREQUAL ${depend})
+        endforeach (source)
       endforeach (targetdepend)
     endif (NOT location)
     
     # Looking for the real file in the include directories.
     if (NOT location)
       foreach (include ${OCAML_${target}_INCLUDE_DIRECTORIES})
-	if (EXISTS "${include}/${depend_name_we}.cmi")
-	  set (location "${include}/${depend_name_we}.cmi")
-	  break ()
-	elseif (EXISTS "${include}/${depend_name_we}.cmi")
-	  set (location "${include}/${depend}.cmi")
-	  break ()
-	endif (EXISTS "${include}/${depend_name_we}.cmi")
+        if (EXISTS "${include}/${depend_name_we}.cmi")
+         set (location "${include}/${depend_name_we}.cmi")
+          break ()
+        elseif (EXISTS "${include}/${depend_name_we}.cmi")
+          set (location "${include}/${depend}.cmi")
+          break ()
+        endif (EXISTS "${include}/${depend_name_we}.cmi")
       endforeach (include)
     endif (NOT location)
     
@@ -299,9 +331,10 @@ function (get_ocaml_dependencies target filename impl hasintf dep)
       list (APPEND ${dep} "${location}")
     else (location)
       if (CMAKE_OCaml_USE_OCAML_TRACE)
-	message (STATUS "Can't find location of the dependency ${depend} for ${target}")
+        message (STATUS "Can't find location of the dependency ${depend} for ${target}")
       endif (CMAKE_OCaml_USE_OCAML_TRACE)
     endif (location)
+    
   endforeach (depend)
   
   # Add the CMI dependency on the interface of this file.
@@ -312,7 +345,7 @@ function (get_ocaml_dependencies target filename impl hasintf dep)
   endif (impl)
   
   set (${dep} ${${dep}} PARENT_SCOPE)
-
+  
   if (CMAKE_OCaml_USE_OCAML_TRACE)
     message (STATUS "Dependencies are ")
     foreach (dep ${${dep}})
@@ -334,12 +367,12 @@ macro (ocaml_add_object_target target source hasintf objectname)
   
   if (OCAML_${target}_NATIVE)
     set (object_ext    cmx)
-    set (compiler      ${CMAKE_OCaml_OPT_COMPILER})
+    set (compiler      ${CMAKE_OCaml_CMD_OPT_COMPILER})
     set (${objectname} ${OCAML_${target}_OUTPUT_DIR}/${source_name_we}.${object_ext})
     set (output        ${${objectname}} ${OCAML_${target}_OUTPUT_DIR}/${source_name_we}.o)
   else (OCAML_${target}_NATIVE)
     set (object_ext    cmo)
-    set (compiler      ${CMAKE_OCaml_COMPILER})
+    set (compiler      ${CMAKE_OCaml_CMD_COMPILER})
     set (${objectname} ${OCAML_${target}_OUTPUT_DIR}/${source_name_we}.${object_ext})
     set (output        ${${objectname}})
   endif (OCAML_${target}_NATIVE)
@@ -355,17 +388,23 @@ macro (ocaml_add_object_target target source hasintf objectname)
     list (APPEND include_flags -I ${include})
   endforeach (include)
   
-  add_custom_command (OUTPUT ${output}
-    COMMAND ${CMAKE_COMMAND} -D ocamldep=${CMAKE_OCaml_DEP}
-                             -D filename=${source}
-			     -D output=${OCAML_${target}_OUTPUT_DIR}
-			     -P ${CMAKE_OCAML_DEP_FILE}
+  set(package_flags)
+  foreach(pkg ${OCAML_${target}_TRANSPKGS})
+    list(APPEND package_flags -package ${pkg})
+  endforeach()
   
-    COMMAND ${compiler} ${CMAKE_OCaml_FLAGS}
-                         ${CMAKE_OCaml_FLAGS_${CMAKE_BUILD_TYPE_UPPER}}
-			 ${include_flags}
-			 -o ${${objectname}}
-			 -c -impl ${source}
+  add_custom_command (OUTPUT ${output}
+    COMMAND ${CMAKE_COMMAND}
+      -D ocamldep=${CMAKE_OCaml_DEP}
+      -D ocamlfind=${CMAKE_OCaml_FIND}
+      -D filename=${source}
+      -D output=${OCAML_${target}_OUTPUT_DIR}
+      -P ${CMAKE_OCAML_DEP_FILE}
+    
+    COMMAND ${compiler}
+      ${CMAKE_OCaml_FLAGS} ${CMAKE_OCaml_FLAGS_${CMAKE_BUILD_TYPE_UPPER}}
+      ${include_flags} ${package_flags}
+      -o ${${objectname}} -c -impl ${source}
     
     MAIN_DEPENDENCY   ${source}
     DEPENDS           ${depends}
@@ -394,17 +433,23 @@ macro (ocaml_add_interface_object_target target source)
     list (APPEND include_flags -I ${include})
   endforeach (include)
   
+  set(package_flags)
+  foreach(pkg ${OCAML_${target}_TRANSPKGS})
+    list(APPEND package_flags -package ${pkg})
+  endforeach()
+  
   add_custom_command (OUTPUT ${output}
-    COMMAND ${CMAKE_COMMAND} -D ocamldep=${CMAKE_OCaml_DEP}
-                             -D filename=${source}
-			     -D output=${OCAML_${target}_OUTPUT_DIR}
-			     -P ${CMAKE_OCAML_DEP_FILE}
+    COMMAND ${CMAKE_COMMAND}
+      -D ocamldep=${CMAKE_OCaml_DEP}
+      -D ocamlfind=${CMAKE_OCaml_FIND}
+      -D filename=${source}
+      -D output=${OCAML_${target}_OUTPUT_DIR}
+      -P ${CMAKE_OCAML_DEP_FILE}
     
-    COMMAND ${CMAKE_OCaml_COMPILER} ${CMAKE_OCaml_FLAGS}
-                                    ${CMAKE_OCaml_FLAGS_${CMAKE_BUILD_TYPE_UPPER}}
-				    ${include_flags}
-				    -o ${output}
-				    -c -intf ${source}
+    COMMAND ${CMAKE_OCaml_CMD_COMPILER}
+      ${CMAKE_OCaml_FLAGS} ${CMAKE_OCaml_FLAGS_${CMAKE_BUILD_TYPE_UPPER}}
+      ${include_flags} ${package_flags}
+      -o ${output} -c -intf ${source}
     
     MAIN_DEPENDENCY   ${source}
     DEPENDS           ${depends}
@@ -433,34 +478,34 @@ macro (add_ocaml_objects target)
     if (NOT impl OR NOT intf)
       get_filename_component (ext ${source} EXT)
       if (ext STREQUAL ".ml")
-	set_source_files_properties (${source} PROPERTIES OCAML_IMPL TRUE)
+        set_source_files_properties (${source} PROPERTIES OCAML_IMPL TRUE)
       elseif (ext STREQUAL ".mli")
-	set_source_files_properties (${source} PROPERTIES OCAML_INTF TRUE)
+        set_source_files_properties (${source} PROPERTIES OCAML_INTF TRUE)
       else (ext STREQUAL ".ml")
-	set (sources)
-	if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
-	  set (sourceml "${CMAKE_CURRENT_SOURCE_DIR}/${source}.ml")
-	  if (EXISTS ${sourceml})
-	    list (APPEND sources ${sourceml})
-	    set_source_files_properties (${sourceml} PROPERTIES OCAML_IMPL TRUE)
-	  endif (EXISTS ${sourceml})
-	  set (sourcemli "${CMAKE_CURRENT_SOURCE_DIR}/${source}.mli")
-	  if (EXISTS ${sourcemli})
-	    list (APPEND sources ${sourcemli})
-	    set_source_files_properties (${sourcemli} PROPERTIES OCAML_INTF TRUE)
-	  endif (EXISTS ${sourcemli})
-	  if (NOT sources)
-	    message (SEND_ERROR "Can't find OCaml files for ${source}. To have correct dependencies, all files must be generated at configuration time.")
-	  endif (NOT sources)
-	endif (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+        set (sources)
+        if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+          set (sourceml "${CMAKE_CURRENT_SOURCE_DIR}/${source}.ml")
+          if (EXISTS ${sourceml})
+            list (APPEND sources ${sourceml})
+            set_source_files_properties (${sourceml} PROPERTIES OCAML_IMPL TRUE)
+          endif (EXISTS ${sourceml})
+          set (sourcemli "${CMAKE_CURRENT_SOURCE_DIR}/${source}.mli")
+          if (EXISTS ${sourcemli})
+            list (APPEND sources ${sourcemli})
+            set_source_files_properties (${sourcemli} PROPERTIES OCAML_INTF TRUE)
+          endif (EXISTS ${sourcemli})
+          if (NOT sources)
+            message (SEND_ERROR "Can't find OCaml files for ${source}. To have correct dependencies, all files must be generated at configuration time.")
+          endif (NOT sources)
+        endif (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
       endif (ext STREQUAL ".ml")
     endif (NOT impl OR NOT intf)
     
     foreach (src ${sources})
       if (IS_ABSOLUTE "${src}")
-	list (APPEND OCAML_${target}_SOURCES "${src}")
+        list (APPEND OCAML_${target}_SOURCES "${src}")
       else (IS_ABSOLUTE "${src}")
-	list (APPEND OCAML_${target}_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/${src}")
+        list (APPEND OCAML_${target}_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/${src}")
       endif (IS_ABSOLUTE "${src}")
     endforeach (src)
     
@@ -479,6 +524,13 @@ macro (add_ocaml_objects target)
 
   list (REMOVE_DUPLICATES OCAML_${target}_INCLUDE_DIRECTORIES)
   
+  set(OCAML_${target}_TRANSPKGS ${OCAML_${target}_PACKAGES})
+  foreach(lib ${OCAML_${target}_LIBRARIES})
+    get_target_property(transpkgs ocaml.${lib} TRANSPKGS)
+    list(APPEND OCAML_${target}_TRANSPKGS ${transpkgs})
+  endforeach()
+  list(REMOVE_DUPLICATES OCAML_${target}_TRANSPKGS)
+  
   foreach (source ${OCAML_${target}_SOURCES})
     get_source_file_property (impl ${source} OCAML_IMPL)
     if (impl)
@@ -486,7 +538,7 @@ macro (add_ocaml_objects target)
       get_filename_component (name_we ${source} NAME_WE)
       set (hasintf FALSE)
       if (EXISTS "${path}/${name_we}.mli")
-	set (hasintf TRUE)
+        set (hasintf TRUE)
       endif (EXISTS "${path}/${name_we}.mli")
       ocaml_add_object_target (${target} ${source} ${hasintf} object)
       list (APPEND OCAML_${target}_OBJECTS ${object})
@@ -506,10 +558,10 @@ macro (target_link_ocaml_libraries target)
   set (libraries)
   
   if (OCAML_${target}_NATIVE)
-    set (compiler ${CMAKE_OCaml_OPT_COMPILER})
+    set (compiler ${CMAKE_OCaml_CMD_OPT_COMPILER})
     set (libext ".cmxa")
   else (OCAML_${target}_NATIVE)
-    set (compiler ${CMAKE_OCaml_COMPILER})
+    set (compiler ${CMAKE_OCaml_CMD_COMPILER})
     set (libext ".cma")
   endif (OCAML_${target}_NATIVE)
   
@@ -526,34 +578,34 @@ macro (target_link_ocaml_libraries target)
   foreach (library ${OCAML_${target}_LIBRARIES})
     if (IS_ABSOLUTE ${library})
       if (OCAML_${target}_NATIVE)
-	list (APPEND libraries ${library}.cmxa)
+        list (APPEND libraries ${library}.cmxa)
       else (OCAML_${target}_NATIVE)
-	list (APPEND libraries ${library}.cma)
+        list (APPEND libraries ${library}.cma)
       endif (OCAML_${target}_NATIVE)
     else (IS_ABSOLUTE ${library})
       get_target_property (location  ocaml.${library} LOCATION)
       get_target_property (ilocation ${library}       IMPORTED_LOCATION)
       if (location) # It is a library of this project
-	list (APPEND deps ${location})
-	list (APPEND tdeps ocaml.${library})
-	get_target_property (libs ocaml.${library} LINK_INTERFACE_LIBRARIES)
-	list (APPEND libraries ${libs} ${location})
-	get_target_property (libs ocaml.${library} LINK_INTERFACE_C_LIBRARIES)
-	foreach (lib ${libs})
-	  get_filename_component (path ${lib} PATH)
-	  set (opt ${opt} -ccopt -L${path})
-	endforeach (lib)
+        list (APPEND deps ${location})
+        list (APPEND tdeps ocaml.${library})
+        get_target_property (libs ocaml.${library} LINK_INTERFACE_LIBRARIES)
+        list (APPEND libraries ${libs} ${location})
+        get_target_property (libs ocaml.${library} LINK_INTERFACE_C_LIBRARIES)
+        foreach (lib ${libs})
+          get_filename_component (path ${lib} PATH)
+          set (opt ${opt} -ccopt -L${path})
+        endforeach (lib)
       elseif (ilocation) # It is a library imported from another project
-	list (APPEND deps ${ilocation})
-	get_target_property (libs ${library} LINK_INTERFACE_LIBRARIES)
-	list (APPEND libraries ${libs} ${ilocation})
+        list (APPEND deps ${ilocation})
+        get_target_property (libs ${library} LINK_INTERFACE_LIBRARIES)
+        list (APPEND libraries ${libs} ${ilocation})
       else (location) # It is a standard library
-	if (OCAML_${target}_NATIVE)
-	  set (location ${library}.cmxa)
-	else (OCAML_${target}_NATIVE)
-	  set (location ${library}.cma)
-	endif (OCAML_${target}_NATIVE)
-	list (APPEND libraries ${location})
+        if (OCAML_${target}_NATIVE)
+          set (location ${library}.cmxa)
+        else (OCAML_${target}_NATIVE)
+          set (location ${library}.cma)
+        endif (OCAML_${target}_NATIVE)
+        list (APPEND libraries ${location})
       endif (location)
     endif (IS_ABSOLUTE ${library})
   endforeach (library)
@@ -584,6 +636,16 @@ macro (target_link_ocaml_libraries target)
       list (APPEND clibraries ${library})
     endif (location)
   endforeach (library)
+  
+  if(${OCAML_${target}_KIND} STREQUAL "EXECUTABLE")
+    set(package_flags)
+    foreach(pkg ${OCAML_${target}_TRANSPKGS})
+      list(APPEND package_flags -package ${pkg})
+    endforeach()
+    if(package_flags)
+      set(opt ${opt} ${package_flags} -linkpkg)
+    endif()
+  endif()
   
   if (custom)
     if (NOT OCAML_${target}_NATIVE)
@@ -630,6 +692,7 @@ macro (target_link_ocaml_libraries target)
     OUTPUT_NAME                ${target}${ext}
     OBJECT_DIRECTORY           ${OCAML_${target}_OUTPUT_DIR}
     OCAML_SOURCES              "${OCAML_${target}_SOURCES}"
+    TRANSPKGS                  "${OCAML_${target}_TRANSPKGS}"
     LINK_INTERFACE_C_LIBRARIES "${clibraries}"
     )
   
@@ -667,8 +730,9 @@ macro (set_ocaml_target_variables target)
     set (OCAML_${target}_NATIVE ${CMAKE_OCaml_NATIVE})
   endif (${target}_NATIVE)
   
-  set (OCAML_${target}_LIBRARIES   ${${target}_LIBRARIES})
-  set (OCAML_${target}_C_LIBRARIES ${${target}_C_LIBRARIES})
+  set(OCAML_${target}_PACKAGES ${${target}_PACKAGES})
+  set(OCAML_${target}_LIBRARIES ${${target}_LIBRARIES})
+  set(OCAML_${target}_C_LIBRARIES ${${target}_C_LIBRARIES})
   
   set (OCAML_${target}_OCAML_TARGET_LIBRARIES)
   
@@ -686,7 +750,7 @@ endmacro (set_ocaml_target_variables)
 # add_ocaml_executable (name sourcefiles)
 #   See description above.
 macro (add_ocaml_executable target)
-  ocaml_parse_macro_arguments (${target} "NATIVE;BYTECODE;SOURCES;LIBRARIES;C_LIBRARIES;LINK_FLAGS" ${ARGN})
+  ocaml_parse_macro_arguments (${target} "NATIVE;BYTECODE;SOURCES;PACKAGES;LIBRARIES;C_LIBRARIES;LINK_FLAGS" ${ARGN})
   set_ocaml_target_variables (${target})
   set (OCAML_${target}_KIND "EXECUTABLE")
   add_ocaml_objects (${target})
@@ -696,7 +760,7 @@ endmacro (add_ocaml_executable)
 # add_ocaml_library (target sourcefiles)
 #   See description above.
 macro (add_ocaml_library target)
-  ocaml_parse_macro_arguments (${target} "NATIVE;BYTECODE;SOURCES;LIBRARIES;C_LIBRARIES;LINK_FLAGS" ${ARGN})
+  ocaml_parse_macro_arguments (${target} "NATIVE;BYTECODE;SOURCES;PACKAGES;LIBRARIES;C_LIBRARIES;LINK_FLAGS" ${ARGN})
   set_ocaml_target_variables (${target})
   set (OCAML_${target}_KIND "LIBRARY")
   add_ocaml_objects (${target})
@@ -793,9 +857,9 @@ macro (gen_ocaml_lexers outfilesname)
     set (_output ${CMAKE_CURRENT_BINARY_DIR}/${_name_we}.ml)
     if (NOT EXISTS ${_output})
       execute_process (
-	COMMAND           ${CMAKE_OCaml_LEX} -o ${_output} -ml ${source}
-	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-	)
+        COMMAND           ${CMAKE_OCaml_LEX} -o ${_output} -ml ${source}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
     endif (NOT EXISTS ${_output})
     add_custom_command (OUTPUT ${_output}
       COMMAND           ${CMAKE_OCaml_LEX} -o ${_output} -ml ${source}
@@ -816,9 +880,9 @@ macro (gen_ocaml_parsers outfilesname)
     set (_output ${CMAKE_CURRENT_BINARY_DIR}/${_name_we}.mli ${CMAKE_CURRENT_BINARY_DIR}/${_name_we}.ml)
     if (NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/${_name_we}.ml)
       execute_process (
-	COMMAND           ${CMAKE_OCaml_YACC} -b ${CMAKE_CURRENT_BINARY_DIR}/${_name_we} ${source}
-	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-	)
+        COMMAND           ${CMAKE_OCaml_YACC} -b ${CMAKE_CURRENT_BINARY_DIR}/${_name_we} ${source}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
     endif (NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/${_name_we}.ml)
     add_custom_command (OUTPUT ${_output}
       COMMAND           ${CMAKE_OCaml_YACC} -b ${CMAKE_CURRENT_BINARY_DIR}/${_name_we} ${source}

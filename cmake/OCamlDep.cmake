@@ -2,6 +2,7 @@
 # Compute OCaml dependencies.
 #
 # Call this script with cmake -D ocamldep=<ocamldep>
+#                             -D ocamlfind=<ocamlfind>
 #                             -D filename=<filename>
 #                             -D output=<output>
 #                             -P OcamlDep.cmake
@@ -18,6 +19,10 @@ set (dep_file      "${output}/Dependencies/${name}.dep.cmake")
 set (temp_dep_file "${dep_file}.tmp")
 
 file (MAKE_DIRECTORY "${output}/Dependencies")
+
+if(ocamlfind)
+  set(ocamldep ${ocamlfind} dep)
+endif()
 
 execute_process (
   COMMAND         ${ocamldep} -modules ${filename}
