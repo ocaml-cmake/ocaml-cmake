@@ -215,7 +215,7 @@ macro (find_ocaml_package name)
       OUTPUT_VARIABLE ${name_upper}_INCLUDE_DIR
       OUTPUT_STRIP_TRAILING_WHITESPACE
       )
-
+    
     execute_process (
       COMMAND    ${CMAKE_OCaml_CMD_QUERY} -format "%v" ${name}
       OUTPUT_VARIABLE ${name_upper}_VERSION
@@ -232,7 +232,6 @@ macro (find_ocaml_package name)
     set (${name_upper}_LIBRARY_DIR ${${name_upper}_INCLUDE_DIR} CACHE PATH "")
     
     find_package_handle_standard_args (${name} DEFAULT_MSG
-      ${name_upper}_VERSION
       ${name_upper}_INCLUDE_DIR
       ${name_upper}_LIBRARY_DIR
       )
@@ -390,7 +389,9 @@ macro (ocaml_add_object_target target source hasintf objectname)
   
   set(package_flags)
   foreach(pkg ${OCAML_${target}_TRANSPKGS})
-    list(APPEND package_flags -package ${pkg})
+    if(CMAKE_OCaml_FIND)
+      list(APPEND package_flags -package ${pkg})
+    endif()
   endforeach()
   
   add_custom_command (OUTPUT ${output}
@@ -435,7 +436,9 @@ macro (ocaml_add_interface_object_target target source)
   
   set(package_flags)
   foreach(pkg ${OCAML_${target}_TRANSPKGS})
-    list(APPEND package_flags -package ${pkg})
+    if(CMAKE_OCaml_FIND)
+      list(APPEND package_flags -package ${pkg})
+    endif()
   endforeach()
   
   add_custom_command (OUTPUT ${output}
@@ -466,6 +469,7 @@ endmacro (ocaml_add_interface_object_target)
 #   Set the OCAML_${name}_OBJECTS and OCAML_${name}_NATIVE variables.
 #   The real target is created by target_link_ocaml_libraries.
 macro (add_ocaml_objects target)
+  
   set (OCAML_${target}_SOURCES)
   
   foreach (source ${${target}_SOURCES})
@@ -511,6 +515,15 @@ macro (add_ocaml_objects target)
     
   endforeach (source)
   
+  set(OCAML_${target}_TRANSPKGS ${OCAML_${target}_PACKAGES})
+  foreach(lib ${OCAML_${target}_LIBRARIES})
+    get_target_property(transpkgs ocaml.${lib} TRANSPKGS)
+    list(APPEND OCAML_${target}_TRANSPKGS ${transpkgs})
+  endforeach()
+  if(DEFINED OCAML_${target}_TRANSPKGS)
+    list(REMOVE_DUPLICATES OCAML_${target}_TRANSPKGS)
+  endif()
+  
   set (OCAML_${target}_OBJECTS)
   set (OCAML_${target}_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/ocaml.${target}.dir")
   
@@ -519,17 +532,16 @@ macro (add_ocaml_objects target)
     get_target_property (object_dir ocaml.${ltarget} OBJECT_DIRECTORY)
     list (APPEND OCAML_${target}_INCLUDE_DIRECTORIES ${object_dir})
   endforeach (ltarget)
+  if(NOT CMAKE_OCaml_FIND)
+    foreach(pkg ${OCAML_${target}_TRANSPKGS})
+      string(TOUPPER ${pkg} PKG)
+      list(APPEND OCAML_${target}_INCLUDE_DIRECTORIES ${${PKG}_INCLUDE_DIRS})
+    endforeach()
+  endif()
   get_directory_property (include_dirs INCLUDE_DIRECTORIES)
   list (APPEND OCAML_${target}_INCLUDE_DIRECTORIES ${include_dirs})
-
-  list (REMOVE_DUPLICATES OCAML_${target}_INCLUDE_DIRECTORIES)
   
-  set(OCAML_${target}_TRANSPKGS ${OCAML_${target}_PACKAGES})
-  foreach(lib ${OCAML_${target}_LIBRARIES})
-    get_target_property(transpkgs ocaml.${lib} TRANSPKGS)
-    list(APPEND OCAML_${target}_TRANSPKGS ${transpkgs})
-  endforeach()
-  list(REMOVE_DUPLICATES OCAML_${target}_TRANSPKGS)
+  list (REMOVE_DUPLICATES OCAML_${target}_INCLUDE_DIRECTORIES)
   
   foreach (source ${OCAML_${target}_SOURCES})
     get_source_file_property (impl ${source} OCAML_IMPL)
@@ -609,7 +621,7 @@ macro (target_link_ocaml_libraries target)
       endif (location)
     endif (IS_ABSOLUTE ${library})
   endforeach (library)
-
+  
   set (custom FALSE)
   set (clibraries)
   foreach (library ${OCAML_${target}_C_LIBRARIES})
@@ -638,12 +650,14 @@ macro (target_link_ocaml_libraries target)
   endforeach (library)
   
   if(${OCAML_${target}_KIND} STREQUAL "EXECUTABLE")
-    set(package_flags)
-    foreach(pkg ${OCAML_${target}_TRANSPKGS})
-      list(APPEND package_flags -package ${pkg})
-    endforeach()
-    if(package_flags)
-      set(opt ${opt} ${package_flags} -linkpkg)
+    if(CMAKE_OCaml_FIND)
+      set(package_flags)
+      foreach(pkg ${OCAML_${target}_TRANSPKGS})
+        list(APPEND package_flags -package ${pkg})
+      endforeach()
+      if(package_flags)
+        set(opt ${opt} ${package_flags} -linkpkg)
+      endif()
     endif()
   endif()
   
