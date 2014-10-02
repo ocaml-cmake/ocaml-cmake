@@ -30,6 +30,10 @@ find_program(CMAKE_OCaml_FIND ocamlfind
   HINTS         ${OCaml_ROOT_DIR}
   PATH_SUFFIXES bin
   )
+  
+if (WIN32)
+	find_program (CMAKE_Flexlink_EXECUTABLE flexlink)
+endif(WIN32)
 
 if(CMAKE_OCaml_EXECUTABLE AND NOT CMAKE_OCaml_FIND)
   
