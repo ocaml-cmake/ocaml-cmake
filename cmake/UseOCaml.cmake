@@ -803,13 +803,13 @@ macro (install_ocaml_targets)
       if (native)
           get_filename_component (file_name_we ${location} NAME_WE)
           get_filename_component (file_path    ${location} PATH)
-		  if (WIN32)
-		    install (FILES ${file_path}/${file_name_we}.lib DESTINATION
+          if (WIN32)
+            install (FILES ${file_path}/${file_name_we}.lib DESTINATION
                 ${install_DESTINATION})
-		  elseif (WIN32)
+          else (WIN32)
             install (FILES ${file_path}/${file_name_we}.a DESTINATION
                 ${install_DESTINATION})
-		  endif(WIN32)
+          endif(WIN32)
       endif (native)
     endif (${kind} STREQUAL "EXECUTABLE")
     set_target_properties (ocaml.${target} PROPERTIES INSTALL_LOCATION ${install_DESTINATION})
