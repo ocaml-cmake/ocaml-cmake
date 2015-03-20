@@ -652,7 +652,8 @@ macro (target_link_ocaml_libraries target)
     list (APPEND tdeps ${library})
   endforeach (library)
 
-  if(${OCAML_${target}_KIND} STREQUAL "EXECUTABLE")
+  if((${OCAML_${target}_KIND} STREQUAL "EXECUTABLE") OR
+      (${OCAML_${target}_KIND} STREQUAL "C_OBJECT"))
     if(CMAKE_OCaml_FIND)
       set(package_flags)
       foreach(pkg ${OCAML_${target}_TRANSPKGS})
@@ -685,21 +686,28 @@ macro (target_link_ocaml_libraries target)
     set (location "${CMAKE_CURRENT_BINARY_DIR}/${target}${CMAKE_EXECUTABLE_SUFFIX}")
     set (opt      ${opt} ${OCAML_${target}_LINK_FLAGS})
     set (libs     ${libraries})
+    message(STATUS "${target} ${location}")
   elseif (${OCAML_${target}_KIND} STREQUAL "LIBRARY")
     set (comment  "Linking OCaml library ${target}")
     set (ext      "${libext}")
     set (location "${CMAKE_CURRENT_BINARY_DIR}/${target}${libext}")
     set (opt      ${opt} -a ${OCAML_${target}_LINK_FLAGS})
     set (libs)
+  elseif (${OCAML_${target}_KIND} STREQUAL "C_OBJECT")
+    set (comment  "Linking OCaml C object ${target}")
+    set (ext      ".o")
+    set (location "${CMAKE_CURRENT_BINARY_DIR}/${target}${ext}")
+    set (opt ${opt} -output-obj ${OCAML_${target}_LINK_FLAGS})
+    set (libs     ${libraries})
   endif (${OCAML_${target}_KIND} STREQUAL "EXECUTABLE")
 
-  add_custom_command (OUTPUT ${target}${ext}
+  add_custom_command (OUTPUT ${location}
     COMMAND ${compiler} ${opt} -o ${target}${ext} ${libs} ${OCAML_${target}_OBJECTS}
     DEPENDS ${OCAML_${target}_OBJECTS} ${deps}
     COMMENT "${comment}"
     )
 
-  add_custom_target (ocaml.${target} ALL DEPENDS ${target}${ext})
+  add_custom_target (ocaml.${target} ALL DEPENDS ${location})
 
   if (tdeps)
     add_dependencies (ocaml.${target} ${tdeps})
@@ -759,9 +767,9 @@ macro (set_ocaml_target_variables target)
 
   foreach (library ${OCAML_${target}_LIBRARIES})
     get_target_property (kind ocaml.${library} KIND)
-    if (kind STREQUAL "LIBRARY")
+    if ((kind STREQUAL "LIBRARY") OR (kind STREQUAL "C_OBJECT"))
       list (APPEND OCAML_${target}_OCAML_TARGET_LIBRARIES ${library})
-    endif (kind STREQUAL "LIBRARY")
+    endif ((kind STREQUAL "LIBRARY") OR (kind STREQUAL "C_OBJECT"))
   endforeach (library)
 
   set (OCAML_${target}_LINK_FLAGS ${${target}_LINK_FLAGS})
@@ -787,6 +795,16 @@ macro (add_ocaml_library target)
   add_ocaml_objects (${target})
   target_link_ocaml_libraries (${target})
 endmacro (add_ocaml_library)
+
+# add_ocaml_c_object (target sourcefiles)
+#   See description above.
+macro (add_ocaml_c_object target)
+    ocaml_parse_macro_arguments (${target} "NATIVE;BYTECODE;SOURCES;PACKAGES;LIBRARIES;C_LIBRARIES;LINK_FLAGS" ${ARGN})
+  set_ocaml_target_variables (${target})
+  set (OCAML_${target}_KIND "C_OBJECT")
+  add_ocaml_objects (${target})
+  target_link_ocaml_libraries (${target})
+endmacro (add_ocaml_c_object)
 
 # install_ocaml_targets (executables DESTINATION destination)
 #   See description above.
