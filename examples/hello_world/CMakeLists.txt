@@ -9,3 +9,5 @@ find_package(OCaml REQUIRED)
 include(UseOCaml)
 
 add_ocaml_executable(main SOURCES main)
+
+add_ocaml_executable(native NATIVE SOURCES main)
