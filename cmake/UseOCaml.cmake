@@ -580,7 +580,7 @@ macro (target_link_ocaml_libraries target)
   set (opt ${CMAKE_OCaml_LINKER_FLAGS} ${CMAKE_OCaml_LINKER_FLAGS_${CMAKE_BUILD_TYPE_UPPER}})
 
   if (WIN32)
-    set (opt -cc \"${CMAKE_Flexlink_EXECUTABLE}\" -cclib \"-x64 -merge-manifest -stack 33554432 -exe\")
+    set (opt -cc \"${CMAKE_Flexlink_EXECUTABLE}\" -cclib \"-chain mingw -exe\")
   else (WIN32)
     if (CMAKE_CXX_COMPILER)
       set (opt ${opt} -cc \"${CMAKE_CXX_COMPILER}\")
